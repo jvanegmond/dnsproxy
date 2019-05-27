@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+
+  <?define sourcelocation=..\DnsProxy.Service\bin\$(var.Configuration) ?>
+
+  <Product Id="*" Name="DnsProxy" Manufacturer="Demo" Language="1033" Version="1.0.0.0" UpgradeCode="3c704400-d1a3-46a0-a1e8-ee502e14e3ea">
+    <Package InstallerVersion="200" Compressed="yes" InstallScope="perMachine" />
+
+    <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <Feature Id="ProductFeature" Title="DnsProxy.Installer" Level="1">
+      <ComponentGroupRef Id="ProductComponents" />
+    </Feature>
+  </Product>
+
+  <Fragment>
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="ProgramFilesFolder">
+        <Directory Id="INSTALLFOLDER" Name="DnsProxy" />
+      </Directory>
+    </Directory>
+  </Fragment>
+
+  <Fragment>
+    <ComponentGroup Id="ProductComponents">
+      <Component Id="config.json" Guid="*" Directory="INSTALLFOLDER">
+        <File Id="config.json" KeyPath="yes" Source="$(var.sourcelocation)\config.json" />
+      </Component>
+      <Component Id="DNS.dll" Guid="*" Directory="INSTALLFOLDER">
+        <File Id="DNS.dll" KeyPath="yes" Source="$(var.sourcelocation)\DNS.dll" />
+      </Component>
+      <Component Id="DnsProxy.dll" Guid="*" Directory="INSTALLFOLDER">
+        <File Id="DnsProxy.dll" KeyPath="yes" Source="$(var.sourcelocation)\DnsProxy.dll" />
+      </Component>
+      <Component Id="Newtonsoft.Json.dll" Guid="*" Directory="INSTALLFOLDER">
+        <File Id="Newtonsoft.Json.dll" KeyPath="yes" Source="$(var.sourcelocation)\Newtonsoft.Json.dll" />
+      </Component>
+      <Component Id="NLog.config" Guid="*" Directory="INSTALLFOLDER">
+        <File Id="NLog.config" KeyPath="yes" Source="$(var.sourcelocation)\NLog.config" />
+      </Component>
+      <Component Id="NLog.dll" Guid="*" Directory="INSTALLFOLDER">
+        <File Id="NLog.dll" KeyPath="yes" Source="$(var.sourcelocation)\NLog.dll" />
+      </Component>
+      <Component Id="DnsProxy.Service.exe" Guid="*" Directory="INSTALLFOLDER">
+        <File Id="DnsProxy.Service.exe" KeyPath="yes" Source="$(var.sourcelocation)\DnsProxy.Service.exe" />
+        <File Id="DnsProxy.Service.exe.config" Source="$(var.sourcelocation)\DnsProxy.Service.exe.config" />
+
+        <ServiceInstall Id="DnsProxy.Install"
+                        Name="DnsProxy"
+                        DisplayName="DnsProxy"
+                        Description="Proof of concept DnsProxy - Demo only"
+                        Start="auto"
+                        Type="ownProcess"
+                        ErrorControl="normal">
+        </ServiceInstall>
+
+        <ServiceControl Id="ServiceInstall.Control"
+                        Name="DnsProxy"
+                        Start="install"
+                        Stop="uninstall"
+                        Remove="uninstall"
+                        Wait="yes"/>
+      </Component>
+    </ComponentGroup>
+  </Fragment>
+</Wix>
