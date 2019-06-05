@@ -3,10 +3,10 @@
 
   <?define sourcelocation=..\DnsProxy.Service\bin\$(var.Configuration) ?>
 
-  <Product Id="*" Name="DnsProxy" Manufacturer="Demo" Language="1033" Version="1.0.0.0" UpgradeCode="3c704400-d1a3-46a0-a1e8-ee502e14e3ea">
+  <Product Id="*" Name="DnsProxy" Manufacturer="Demo" Language="1033" Version="1.0.1.0" UpgradeCode="3c704400-d1a3-46a0-a1e8-ee502e14e3ea">
     <Package InstallerVersion="200" Compressed="yes" InstallScope="perMachine" />
 
-    <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
+    <MajorUpgrade DowngradeErrorMessage="A newer version of DnsProxy is already installed." />
     <MediaTemplate EmbedCab="yes" />
 
     <Feature Id="ProductFeature" Title="DnsProxy.Installer" Level="1">
