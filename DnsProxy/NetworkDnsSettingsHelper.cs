@@ -82,12 +82,8 @@ namespace DnsProxy
             {
                 using (var networkAdapters = networkAdapterConfiguration.GetInstances())
                 {
-                    foreach (var networkAdapter in networkAdapters.Cast<ManagementObject>().Where(networkAdapter => (bool)networkAdapter["IPEnabled"] && networkAdapter["Description"].Equals(networkAdapterDescription)))
+                    foreach (var networkAdapter in networkAdapters.Cast<ManagementObject>().Where(networkAdapter => networkAdapter["Description"].Equals(networkAdapterDescription)))
                     {
-                        var existingDnsServers = (string[])networkAdapter["DNSServerSearchOrder"];
-
-                        // If we are trying to apply the old configuration, we have to first set the NIC to automatic and wait for DNS servers to be configured
-
                         using (var setDnsServerSearchOrderMethodParameters = networkAdapter.GetMethodParameters("SetDNSServerSearchOrder"))
                         {
                             var result = networkAdapter.InvokeMethod("SetDNSServerSearchOrder", setDnsServerSearchOrderMethodParameters, null);
@@ -97,8 +93,6 @@ namespace DnsProxy
                                 throw new Exception("Unable to set DNS server with error number (see SetDNSServerSearchOrder error codes): " + errorCode);
                             }
                         }
-
-                        return;
                     }
                 }
             }
