@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
@@ -12,7 +13,6 @@ namespace DnsProxy
 {
     public class DnsProxyService : IDisposable
     {
-        private const string _networkAdapterDescription = "Intel(R) Ethernet Connection (5) I219-V";
         private readonly Logger _logger = LogManager.GetCurrentClassLogger();
 
         private DnsServer _server;
@@ -33,9 +33,13 @@ namespace DnsProxy
 
             try
             {
-                var badDnsServers = NetworkDnsSettingsHelper.ConfigureNameServers(new[] {"127.0.0.1"});
+                NetworkDnsSettingsHelper.ConfigureNameServersAutomatic();
 
-                var resolver = new DnsResolver(badDnsServers, config.GoodDnsServers, config.BadIpAddressResponses);
+                var badDnsServers = NetworkDnsSettingsHelper.GetNameServers();
+
+                var badIpAddresses = DnsResolver.ResolveAddress(badDnsServers, "fastmail.com"); // Any blocked domain here will do
+
+                var resolver = new DnsResolver(badDnsServers, config.GoodDnsServers, badIpAddresses);
                 _server = new DnsServer(resolver);
 
                 var endPoint = new IPEndPoint(IPAddress.Any, 53);
@@ -43,6 +47,10 @@ namespace DnsProxy
                 _logger.Info($"Starting listening on {endPoint}");
 
                 _server.Listen(endPoint);
+
+                NetworkDnsSettingsHelper.ConfigureNameServers(new[] {"127.0.0.1"});
+
+                FlushDns();
             }
             catch (Exception err)
             {
@@ -50,11 +58,21 @@ namespace DnsProxy
             }
         }
 
+        private void FlushDns()
+        {
+            var startInfo = new ProcessStartInfo("ipconfig", "/flushdns");
+            startInfo.RedirectStandardOutput = true;
+            startInfo.UseShellExecute = false;
+            var flushdns = Process.Start(startInfo);
+            _logger.Info("FlushDNS result: \r\n" + flushdns.StandardOutput.ReadToEnd());
+        }
+
         private DnsProxyConfiguration GetConfig()
         {
             const string configFile = "config.json";
-            string configuration;
+            string configuration = null;
 
+#if !DEBUG
             try
             {
                 var uri = new Uri("http://spaces.cssrd.local/jvanegmond/" + configFile);
@@ -66,6 +84,11 @@ namespace DnsProxy
             catch (Exception ex1)
             {
                 _logger.Error(ex1);
+            }
+
+            if (configuration == null)
+#endif
+            {
                 try
                 {
                     _logger.Info("Getting configuration from local file");
@@ -90,7 +113,7 @@ namespace DnsProxy
             }
             else
             {
-                _logger.Info($"Got config. Good DNS servers: {string.Join(", ", config.GoodDnsServers)}. Bad IP addresses: {string.Join(", ", config.BadIpAddressResponses)}");
+                _logger.Info($"Got config. Good DNS servers: {string.Join(", ", config.GoodDnsServers)}.");
             }
 
             return config;
@@ -100,16 +123,9 @@ namespace DnsProxy
         {
             _logger.Info("Stopping service");
 
-            try
-            {
-                NetworkDnsSettingsHelper.ResetNameServers(_networkAdapterDescription);
-            }
-            catch (Exception err)
-            {
-                _logger.Error($"Error resetting DNS servers: {err}");
-            }
+            NetworkDnsSettingsHelper.ConfigureNameServersAutomatic();
 
-            _server.Dispose();
+            _server?.Dispose();
         }
     }
 }

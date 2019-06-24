@@ -12,37 +12,9 @@ namespace DnsProxy
     {
         private static readonly Logger _logger = LogManager.GetCurrentClassLogger();
 
-        public static string[] ConfigureNameServers(string[] newDnsServers)
+        public static string[] GetNameServers()
         {
-            // Reset all adapters to automatic configuration
-
-            using (var networkAdapterConfiguration = new ManagementClass("Win32_NetworkAdapterConfiguration"))
-            {
-                using (var networkAdapters = networkAdapterConfiguration.GetInstances())
-                {
-                    foreach (var networkAdapter in networkAdapters.Cast<ManagementObject>().Where(networkAdapter =>
-                        (bool)networkAdapter["IPEnabled"] && networkAdapter["DNSDomain"] != null && networkAdapter["DNSDomain"].Equals("eu.nice.com")))
-                    {
-                        var existingDnsServers = (string[])networkAdapter["DNSServerSearchOrder"];
-
-                        // If we are trying to apply the old configuration, we have to first set the NIC to automatic and wait for DNS servers to be configured
-                        if (existingDnsServers.SequenceEqual(newDnsServers))
-                        {
-                            using (var setDnsServerSearchOrderMethodParameters = networkAdapter.GetMethodParameters("SetDNSServerSearchOrder"))
-                            {
-                                var result = networkAdapter.InvokeMethod("SetDNSServerSearchOrder", setDnsServerSearchOrderMethodParameters, null);
-                                var errorCode = (uint)result["ReturnValue"];
-                                if (errorCode != 0)
-                                {
-                                    throw new Exception("Unable to set DNS server with error number (see SetDNSServerSearchOrder error codes): " + errorCode);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Set all adapters to manual configuration and return aggregated DNS services for all adapters
+            // Set all adapters to manual configuration and return previously configured DNS services for all adapters
 
             List<string> dnsServers = new List<string>();
 
@@ -51,11 +23,36 @@ namespace DnsProxy
                 using (var networkAdapters = networkAdapterConfiguration.GetInstances())
                 {
                     foreach (var networkAdapter in networkAdapters.Cast<ManagementObject>().Where(networkAdapter =>
-                        (bool)networkAdapter["IPEnabled"] && networkAdapter["DNSDomain"] != null && networkAdapter["DNSDomain"].Equals("eu.nice.com")))
+                        (bool)networkAdapter["IPEnabled"] && networkAdapter["DNSDomain"] != null
+                                                          && networkAdapter["DNSDomain"].ToString().EndsWith("nice.com")))
                     {
-                        _logger.Info($"Set DNS server on adapter {networkAdapter["Description"]}");
+                        _logger.Info($"Get DNS servers on adapter {networkAdapter["Description"]}");
 
                         var existingDnsServers = (string[])networkAdapter["DNSServerSearchOrder"];
+
+                        _logger.Info($"For adapter {networkAdapter["Description"]} got DNS servers: {string.Join(", ", existingDnsServers)}");
+
+                        dnsServers.AddRange(existingDnsServers);
+                    }
+                }
+            }
+
+            return dnsServers.Distinct().ToArray();
+        }
+
+        public static void ConfigureNameServers(string[] newDnsServers)
+        {
+            // Set all adapters to manual configuration
+
+            using (var networkAdapterConfiguration = new ManagementClass("Win32_NetworkAdapterConfiguration"))
+            {
+                using (var networkAdapters = networkAdapterConfiguration.GetInstances())
+                {
+                    foreach (var networkAdapter in networkAdapters.Cast<ManagementObject>().Where(networkAdapter =>
+                        (bool)networkAdapter["IPEnabled"] && networkAdapter["DNSDomain"] != null
+                                                          && networkAdapter["DNSDomain"].ToString().EndsWith("nice.com")))
+                    {
+                        _logger.Info($"Set DNS servers on adapter {networkAdapter["Description"]}");
 
                         using (var setDnsServerSearchOrderMethodParameters = networkAdapter.GetMethodParameters("SetDNSServerSearchOrder"))
                         {
@@ -67,37 +64,41 @@ namespace DnsProxy
                                 throw new Exception("Unable to set DNS server with error number (see SetDNSServerSearchOrder error codes): " + errorCode);
                             }
                         }
-
-                        dnsServers.AddRange(existingDnsServers);
                     }
                 }
             }
-
-            return dnsServers.Distinct().ToArray();
         }
 
-        public static void ResetNameServers(string networkAdapterDescription)
+        public static void ConfigureNameServersAutomatic()
         {
             using (var networkAdapterConfiguration = new ManagementClass("Win32_NetworkAdapterConfiguration"))
             {
                 using (var networkAdapters = networkAdapterConfiguration.GetInstances())
                 {
-                    foreach (var networkAdapter in networkAdapters.Cast<ManagementObject>().Where(networkAdapter => networkAdapter["Description"].Equals(networkAdapterDescription)))
+                    foreach (var networkAdapter in networkAdapters.Cast<ManagementObject>().Where(networkAdapter =>
+                        (bool)networkAdapter["IPEnabled"] && networkAdapter["DNSDomain"] != null
+                                                          && networkAdapter["DNSDomain"].ToString().EndsWith("nice.com")))
                     {
-                        using (var setDnsServerSearchOrderMethodParameters = networkAdapter.GetMethodParameters("SetDNSServerSearchOrder"))
+                        _logger.Info($"Set DNS servers on adapter {networkAdapter["Description"]} to automatic");
+                        try
                         {
-                            var result = networkAdapter.InvokeMethod("SetDNSServerSearchOrder", setDnsServerSearchOrderMethodParameters, null);
-                            var errorCode = (uint)result["ReturnValue"];
-                            if (errorCode != 0)
+                            using (var setDnsServerSearchOrderMethodParameters = networkAdapter.GetMethodParameters("SetDNSServerSearchOrder"))
                             {
-                                throw new Exception("Unable to set DNS server with error number (see SetDNSServerSearchOrder error codes): " + errorCode);
+                                var result = networkAdapter.InvokeMethod("SetDNSServerSearchOrder", setDnsServerSearchOrderMethodParameters, null);
+                                var errorCode = (uint)result["ReturnValue"];
+                                if (errorCode != 0)
+                                {
+                                    throw new Exception("Unable to set DNS server with error number (see SetDNSServerSearchOrder error codes): " + errorCode);
+                                }
                             }
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.Error("An error occurred while resetting DNS servers to automatic for adapter {0}", networkAdapter["Description"]);
                         }
                     }
                 }
             }
-
-            throw new ArgumentException("Network adapter not found by description", nameof(networkAdapterDescription));
         }
     }
 }
