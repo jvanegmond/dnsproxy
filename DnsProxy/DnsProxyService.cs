@@ -2,9 +2,12 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using System.Threading;
+using DNS.Client;
 using DNS.Server;
 using Microsoft.SqlServer.Server;
 using NLog;
@@ -13,9 +16,16 @@ namespace DnsProxy
 {
     public class DnsProxyService : IDisposable
     {
-        private readonly Logger _logger = LogManager.GetCurrentClassLogger();
 
-        private DnsServer _server;
+        private static readonly Logger _logger = LogManager.GetCurrentClassLogger();
+
+        private readonly DnsServer _server;
+        private readonly Thread _configurationThread;
+        private bool _stop;
+        private readonly ManualResetEvent _configurationThreadEnded = new ManualResetEvent(false);
+
+        private List<NetworkInterface> _managedNetworkInterfaces = new List<NetworkInterface>();
+        private readonly DnsResolver _resolver;
 
         public DnsProxyService()
         {
@@ -26,21 +36,16 @@ namespace DnsProxy
             {
                 config = GetConfig();
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 return;
             }
 
             try
             {
-                NetworkDnsSettingsHelper.ConfigureNameServersAutomatic();
-
-                var badDnsServers = NetworkDnsSettingsHelper.GetNameServers();
-
-                var badIpAddresses = DnsResolver.ResolveAddress(badDnsServers, "fastmail.com"); // Any blocked domain here will do
-
-                var resolver = new DnsResolver(badDnsServers, config.GoodDnsServers, badIpAddresses);
-                _server = new DnsServer(resolver);
+                // Set up DNS server
+                _resolver = new DnsResolver(config.GoodDnsServers);
+                _server = new DnsServer(_resolver);
 
                 var endPoint = new IPEndPoint(IPAddress.Any, 53);
 
@@ -48,7 +53,13 @@ namespace DnsProxy
 
                 _server.Listen(endPoint);
 
-                NetworkDnsSettingsHelper.ConfigureNameServers(new[] {"127.0.0.1"});
+                // Set up all network interfaces
+                _managedNetworkInterfaces.AddRange(NetworkDnsSettingsHelper.GetNetworkInterfaces());
+
+                foreach (var managedNetworkInterface in _managedNetworkInterfaces)
+                {
+                    SetupNetworkAdapter(managedNetworkInterface);
+                }
 
                 FlushDns();
             }
@@ -56,15 +67,69 @@ namespace DnsProxy
             {
                 _logger.Error($"Error starting service: {err}");
             }
+
+            _configurationThread = new Thread(ConfigurationThread);
+            _configurationThread.Start();
         }
 
-        private void FlushDns()
+        private void ConfigurationThread()
+        {
+            while (!_stop)
+            {
+                var previousState = _managedNetworkInterfaces;
+
+                var currentState = NetworkDnsSettingsHelper.GetNetworkInterfaces();
+
+                // Removed network interfaces can be set to automatic again
+                foreach (var managedNetworkInterface in previousState.Except(currentState))
+                {
+                    NetworkDnsSettingsHelper.ConfigureNameServersAutomatic(managedNetworkInterface);
+                }
+
+                // Added network interfaces should be set to manual
+                foreach (var managedNetworkInterface in currentState.Except(previousState))
+                {
+                    SetupNetworkAdapter(managedNetworkInterface);
+                }
+
+                _managedNetworkInterfaces = currentState;
+
+                Thread.Sleep(TimeSpan.FromSeconds(1));
+            }
+
+            _configurationThreadEnded.Set();
+        }
+
+        private void SetupNetworkAdapter(NetworkInterface managedNetworkInterface)
+        {
+            NetworkDnsSettingsHelper.ConfigureNameServersAutomatic(managedNetworkInterface);
+
+            var badDnsServers = NetworkDnsSettingsHelper.GetNameServers(managedNetworkInterface);
+
+            _logger.Info($"From adapter {managedNetworkInterface.Description} got bad DNS servers {string.Join(", ", badDnsServers)}");
+            foreach (var badDnsServer in badDnsServers)
+            {
+                _resolver.AddBadDnsServer(IPAddress.Parse(badDnsServer));
+            }
+
+            var badIpAddresses = DnsResolver.ResolveAddress(badDnsServers, "fastmail.com"); // Any blocked domain here will do
+
+            _logger.Info($"From adapter {managedNetworkInterface.Description} got bad IP addresses {string.Join(", ", badIpAddresses)}");
+            foreach (var badIpAddress in badIpAddresses)
+            {
+                _resolver.AddBadResolvedAddress(badIpAddress);
+            }
+
+            NetworkDnsSettingsHelper.ConfigureNameServers(managedNetworkInterface, new[] { "127.0.0.1" });
+        }
+
+        private static void FlushDns()
         {
             var startInfo = new ProcessStartInfo("ipconfig", "/flushdns");
             startInfo.RedirectStandardOutput = true;
             startInfo.UseShellExecute = false;
-            var flushdns = Process.Start(startInfo);
-            _logger.Info("FlushDNS result: \r\n" + flushdns.StandardOutput.ReadToEnd());
+            var process = Process.Start(startInfo);
+            _logger.Info("FlushDNS result: \r\n" + process.StandardOutput.ReadToEnd());
         }
 
         private DnsProxyConfiguration GetConfig()
@@ -91,12 +156,8 @@ namespace DnsProxy
             {
                 try
                 {
-                    _logger.Info("Getting configuration from local file");
-
                     // Use cached config
                     configuration = File.ReadAllText(configFile, Encoding.UTF8);
-
-                    _logger.Info("Got configuration from local file");
                 }
                 catch (Exception ex2)
                 {
@@ -113,7 +174,7 @@ namespace DnsProxy
             }
             else
             {
-                _logger.Info($"Got config. Good DNS servers: {string.Join(", ", config.GoodDnsServers)}.");
+                _logger.Debug($"Got config. Good DNS servers: {string.Join(", ", config.GoodDnsServers)}.");
             }
 
             return config;
@@ -123,7 +184,13 @@ namespace DnsProxy
         {
             _logger.Info("Stopping service");
 
-            NetworkDnsSettingsHelper.ConfigureNameServersAutomatic();
+            foreach (var networkInterface in _managedNetworkInterfaces)
+            {
+                NetworkDnsSettingsHelper.ConfigureNameServersAutomatic(networkInterface);
+            }
+
+            _stop = true;
+            _configurationThread.Abort();
 
             _server?.Dispose();
         }

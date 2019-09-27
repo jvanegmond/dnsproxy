@@ -14,35 +14,58 @@ namespace DnsProxy
 {
     public class DnsResolver : IRequestResolver
     {
+        private class _DnsClient : DnsClient
+        {
+            public IPAddress IpAddress { get; }
+
+            public _DnsClient(IPEndPoint dns) : base(dns)
+            {
+                IpAddress = dns.Address;
+            }
+
+            public _DnsClient(IPAddress ip, int port = 53) : base(ip, port)
+            {
+                IpAddress = ip;
+            }
+
+            public _DnsClient(string ip, int port = 53) : base(ip, port)
+            {
+                IpAddress = IPAddress.Parse(ip);
+            }
+
+            public _DnsClient(IRequestResolver resolver) : base(resolver)
+            {
+                IpAddress = null;
+            }
+        }
+
         private static readonly Logger _logger = LogManager.GetCurrentClassLogger();
 
-        private readonly List<DnsClient> _badDnsClients = new List<DnsClient>();
-        private readonly List<DnsClient> _goodDnsClients = new List<DnsClient>();
-
+        private readonly List<_DnsClient> _badDnsClients = new List<_DnsClient>();
         private readonly List<IPAddress> _badIpAddresses = new List<IPAddress>();
+        private readonly List<_DnsClient> _goodDnsClients = new List<_DnsClient>();
 
-        public DnsResolver(ICollection<string> badDnsServers, ICollection<string> goodDnsServers, ICollection<IPAddress> badIpAddressResponses)
+        public DnsResolver(ICollection<string> goodDnsServers)
         {
-            if (badDnsServers.Count == 0) throw new ArgumentException("At least one bad DNS server must be configured", nameof(badDnsServers));
             if (goodDnsServers.Count == 0) throw new ArgumentException("At least one good DNS server must be configured", nameof(goodDnsServers));
-
-            foreach (var badDnsServer in badDnsServers)
-            {
-                _logger.Info($"Bad DNS server: {badDnsServer}");
-                _badDnsClients.Add(new DnsClient(badDnsServer));
-            }
 
             foreach (var goodDnsServer in goodDnsServers)
             {
                 _logger.Info($"Good DNS server: {goodDnsServer}");
-                _goodDnsClients.Add(new DnsClient(goodDnsServer));
+                _goodDnsClients.Add(new _DnsClient(goodDnsServer));
             }
+        }
 
-            foreach (var badIpAddress in badIpAddressResponses)
-            {
-                _logger.Info($"Bad IP address: {badIpAddress}");
-                _badIpAddresses.Add(badIpAddress);
-            }
+        public void AddBadDnsServer(IPAddress ipAddress)
+        {
+            if (_badDnsClients.Any(_ => IpAddressEquals(_.IpAddress, ipAddress))) return;
+            _badDnsClients.Add(new _DnsClient(ipAddress));
+        }
+
+        public void AddBadResolvedAddress(IPAddress ipAddress)
+        {
+            if (_badIpAddresses.Any(_ => IpAddressEquals(_, ipAddress))) return;
+            _badIpAddresses.Add(ipAddress);
         }
 
         public async Task<IResponse> Resolve(IRequest request)
@@ -97,7 +120,7 @@ namespace DnsProxy
             return false;
         }
 
-        public static List<IPAddress> ResolveAddress(string[] badDnsServers, string badDomainName)
+        public static List<IPAddress> ResolveAddress(ICollection<string> badDnsServers, string badDomainName)
         {
             var result = new List<IPAddress>();
 

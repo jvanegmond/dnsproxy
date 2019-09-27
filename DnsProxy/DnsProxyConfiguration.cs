@@ -11,7 +11,6 @@ namespace DnsProxy
     public class DnsProxyConfiguration
     {
         public List<string> GoodDnsServers { get; } = new List<string>();
-        public List<string> BadIpAddressResponses { get; } = new List<string>();
 
         public static DnsProxyConfiguration Load(string data)
         {

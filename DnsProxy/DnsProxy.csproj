@@ -74,6 +74,7 @@
     <Compile Include="DnsProxyConfiguration.cs" />
     <Compile Include="DnsProxyService.cs" />
     <Compile Include="NetworkDnsSettingsHelper.cs" />
+    <Compile Include="NetworkInterface.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>
