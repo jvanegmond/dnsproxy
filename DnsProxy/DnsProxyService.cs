@@ -76,25 +76,32 @@ namespace DnsProxy
         {
             while (!_stop)
             {
-                var previousState = _managedNetworkInterfaces;
-
-                var currentState = NetworkDnsSettingsHelper.GetNetworkInterfaces();
-
-                // Removed network interfaces can be set to automatic again
-                foreach (var managedNetworkInterface in previousState.Except(currentState))
+                try
                 {
-                    NetworkDnsSettingsHelper.ConfigureNameServersAutomatic(managedNetworkInterface);
-                }
+                    var previousState = _managedNetworkInterfaces;
 
-                // Added network interfaces should be set to manual
-                foreach (var managedNetworkInterface in currentState.Except(previousState))
+                    var currentState = NetworkDnsSettingsHelper.GetNetworkInterfaces();
+
+                    // Removed network interfaces can be set to automatic again
+                    foreach (var managedNetworkInterface in previousState.Except(currentState))
+                    {
+                        NetworkDnsSettingsHelper.ConfigureNameServersAutomatic(managedNetworkInterface);
+                    }
+
+                    // Added network interfaces should be set to manual
+                    foreach (var managedNetworkInterface in currentState.Except(previousState))
+                    {
+                        SetupNetworkAdapter(managedNetworkInterface);
+                    }
+
+                    _managedNetworkInterfaces = currentState;
+
+                    Thread.Sleep(TimeSpan.FromSeconds(1));
+                }
+                catch (Exception err)
                 {
-                    SetupNetworkAdapter(managedNetworkInterface);
+                    _logger.Error(err, "An unexpected error occurred: ");
                 }
-
-                _managedNetworkInterfaces = currentState;
-
-                Thread.Sleep(TimeSpan.FromSeconds(1));
             }
 
             _configurationThreadEnded.Set();
