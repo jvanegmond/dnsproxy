@@ -69,6 +69,7 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Base64.cs" />
     <Compile Include="DnsResolver.cs" />
     <Compile Include="DnsServer.cs" />
     <Compile Include="DnsProxyConfiguration.cs" />
