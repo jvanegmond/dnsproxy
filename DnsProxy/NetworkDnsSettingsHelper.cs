@@ -21,7 +21,7 @@ namespace DnsProxy
                 {
                     foreach (var networkAdapter in networkAdapters.Cast<ManagementObject>().Where(networkAdapter =>
                         (bool)networkAdapter["IPEnabled"] && networkAdapter["DNSDomain"] != null
-                                                          && networkAdapter["DNSDomain"].ToString().EndsWith("nice.com")))
+                                                          && networkAdapter["DNSDomain"].ToString().EndsWith(Base64.Decode("bmljZS5jb20="))))
                     {
                         result.Add(new NetworkInterface(networkAdapter));
                     }

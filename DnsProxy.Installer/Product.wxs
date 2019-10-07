@@ -49,7 +49,7 @@
         <ServiceInstall Id="DnsProxy.Install"
                         Name="DnsProxy"
                         DisplayName="DnsProxy"
-                        Description="Proof of concept DnsProxy - Demo only"
+                        Description="DNS proxy which can send DNS requests to multiple servers, picking and forwarding the correct response based on a known bad response."
                         Start="auto"
                         Type="ownProcess"
                         ErrorControl="normal">
